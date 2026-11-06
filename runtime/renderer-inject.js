@@ -1288,7 +1288,7 @@
     if (scheduler.frame !== null) window.cancelAnimationFrame(scheduler.frame);
     scheduler.timeout = null;
     scheduler.frame = null;
-    // Keep dirty flags while the renderer is hidden or the computer is idle.
+    // Keep dirty flags while the renderer is hidden or the screen/session sleeps.
     if (document.hidden || window[POWER_KEY]) return;
     const pending = { root: scheduler.root, scope: scheduler.scope, parts: scheduler.parts };
     scheduler.root = false;

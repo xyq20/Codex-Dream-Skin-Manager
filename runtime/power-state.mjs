@@ -25,9 +25,8 @@ export function observePowerState(executable, onSuspended) {
       const line = pending.slice(0, end); pending = pending.slice(end + 1);
       try {
         const value = JSON.parse(line);
-        if (typeof value.screenAwake !== "boolean" || !Number.isFinite(value.idleSeconds) || value.idleSeconds < 0) throw new Error();
-        // Background art must not keep an unattended computer awake indefinitely.
-        publish(!value.screenAwake || value.idleSeconds >= 60);
+        if (typeof value.screenAwake !== "boolean") throw new Error();
+        publish(!value.screenAwake);
       } catch { failed(); return; }
     }
   });

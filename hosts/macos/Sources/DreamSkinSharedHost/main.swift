@@ -44,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKSc
             window.title = "Codex Dream Skin"; window.minSize = NSSize(width: 820, height: 600); window.contentView = web
             window.delegate = self; window.center(); window.makeKeyAndOrderFront(nil)
             try startBackend()
-            power = PowerState { [weak self] awake, _ in
+            power = PowerState { [weak self] awake in
                 self?.screenAwake = awake; self?.syncObservation()
             }
             power?.start()
@@ -182,8 +182,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKSc
 }
 
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--observe-power" {
-    let power = PowerState { awake, idle in
-        guard idle.isFinite, let bytes = try? JSONSerialization.data(withJSONObject: ["screenAwake": awake, "idleSeconds": idle]) else { return }
+    let power = PowerState { awake in
+        guard let bytes = try? JSONSerialization.data(withJSONObject: ["screenAwake": awake]) else { return }
         do { try FileHandle.standardOutput.write(contentsOf: bytes + Data([10])) } catch { exit(0) }
     }
     // Closing the watcher's input pipe also closes this observer after a crash.
@@ -191,7 +191,7 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--observe-powe
         while !FileHandle.standardInput.availableData.isEmpty { }
         exit(0)
     }
-    power.start(observeInput: true)
+    power.start()
     withExtendedLifetime(power) { RunLoop.main.run() }
     exit(0)
 }

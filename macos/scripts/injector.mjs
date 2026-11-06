@@ -1169,7 +1169,13 @@ async function runWatch(options) {
           }
           record.resumeSetup = async (deferred = true) => {
             if (!lifecycle.canMutate() || !lifecycle.owns(target.id, session)) return;
-            if (powerSuspended || await session.evaluate("document.hidden")) { record.waitingForVisibility = true; return; }
+            if (powerSuspended) { record.waitingForVisibility = true; return; }
+            if (await session.evaluate("document.hidden")) {
+              record.waitingForVisibility = true;
+              // Visibility may change before the hidden sample reaches Node.
+              if (!powerSuspended && !await session.evaluate("document.hidden")) record.resumeVisible?.();
+              return;
+            }
             const setupEpoch = lifecycle.epoch;
             const setupOperation = activeOperation;
             const setupRecovery = recoveryOperation && pauseRecovery?.token === recoveryOperation.token ? recoveryOperation : null;
@@ -1227,6 +1233,7 @@ async function runWatch(options) {
               true,
             );
             if (!verification?.pass) {
+              if (powerSuspended) { record.waitingForVisibility = true; return; }
               if (verification?.checks?.documentVisible === false || await session.evaluate("document.hidden")) {
                 record.waitingForVisibility = true;
                 // A visible event can arrive between the sample and deferral.

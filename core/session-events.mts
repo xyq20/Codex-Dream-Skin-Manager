@@ -26,7 +26,13 @@ export class SessionEvents {
   private schedule(delay = 15000): void {
     if (!this.enabled || !this.observationActive || this.closing || this.observing) return;
     clearTimeout(this.timer);
-    this.timer = setTimeout(() => { this.observing = this.observe().finally(() => { this.observing = null; this.schedule(); }); }, delay);
+    this.timer = setTimeout(() => {
+      const generation = this.generation;
+      this.observing = this.observe().finally(() => {
+        this.observing = null;
+        this.schedule(generation === this.generation ? 15000 : 0);
+      });
+    }, delay);
     this.timer.unref();
   }
   private async observe(): Promise<void> {

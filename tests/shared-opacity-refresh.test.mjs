@@ -23,10 +23,16 @@ test("macOS deferred setup keeps its connection and applies the latest payload o
   const start = source.indexOf("          record.resumeSetup = async (deferred = true) => {");
   const end = source.indexOf("          if (!pausing && lifecycle.canMutate(connectionEpoch)) await watchVisibility", start);
   assert.ok(start >= 0 && end > start);
-  for (const gate of ["hidden", "power"]) {
-    let hidden = gate === "hidden";
+  for (const gate of ["hidden", "power", "visibility-race", "power-during-verification"]) {
+    let hidden = gate === "hidden" || gate === "visibility-race", resumes = 0;
     const calls = [], record = { ready: false, earlyRevision: "A" };
-    const session = { closed: false, evaluate: async expression => expression === "document.hidden" ? hidden : false };
+    record.resumeVisible = () => { resumes++; };
+    const session = { closed: false, evaluate: async expression => {
+      if (expression !== "document.hidden") return false;
+      const sampled = hidden;
+      if (gate === "visibility-race") hidden = false;
+      return sampled;
+    } };
     const lifecycle = new WatcherLifecycle({ sessionFor: value => value.session });
     record.session = session;
     lifecycle.sessions.set("fixture", record);
@@ -40,14 +46,21 @@ test("macOS deferred setup keeps its connection and applies the latest payload o
       applyLoadedToSession: async (connected, payload) => { assert.equal(connected, session); calls.push(["apply", payload.revision]); },
       bindMediaFileToSession: async () => assert.fail("New payload must be applied"),
       waitForVerifiedSession: async (connected, _timeout, _theme, revision) => {
-        assert.equal(connected, session); calls.push(["verify", revision]); return { pass: true };
+        assert.equal(connected, session); calls.push(["verify", revision]);
+        if (gate === "power-during-verification" && revision === "A") {
+          context.powerSuspended = true; return { pass: false, checks: { documentVisible: true } };
+        }
+        return { pass: true };
       }, console: { log() {} },
     };
     vm.runInNewContext(source.slice(start, end), context);
     await record.resumeSetup(false);
     assert.equal(record.waitingForVisibility, true);
     assert.equal(record.ready, false);
-    assert.deepEqual(calls, [], "A deferred page must not repeatedly inject or verify.");
+    assert.deepEqual(calls, gate === "power-during-verification" ? [["apply", "A"], ["verify", "A"]] : [],
+      "A deferred page must not repeatedly inject or verify.");
+    assert.equal(resumes, gate === "visibility-race" ? 1 : 0, "A visibility change during sampling must not be lost.");
+    calls.length = 0;
     context.desiredPayload = { revision: "B", payload: "B", theme: { id: "fixture", name: "B" } };
     context.powerSuspended = false; hidden = false;
     await record.resumeSetup();

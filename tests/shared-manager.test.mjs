@@ -21,10 +21,11 @@ import { MacOSReadAdapter } from "../build/shared/platforms/macos/read-adapter.m
 import { observePowerState } from "../runtime/power-state.mjs";
 
 test("native background suspension stops status capture while preserving operation events", async t => {
-  let captures = 0;
+  let captures = 0, captureWait = null;
   const sent = [];
   const events = new SessionEvents("energy-test", async () => {
     captures++;
+    if (captureWait) await captureWait;
     return { sequence: captures, observedAt: "now", renderer: { verifiedAt: null } };
   }, () => false);
   t.after(() => events.close());
@@ -39,6 +40,14 @@ test("native background suspension stops status capture while preserving operati
   assert.equal(captures, 1, "Showing the manager captures current state without reconnecting");
   events.setObservationActive(false); await settle();
   assert.equal(captures, 1);
+  let release;
+  captureWait = new Promise(resolve => { release = resolve; });
+  events.setObservationActive(true); await settle();
+  assert.equal(captures, 2);
+  events.setObservationActive(false); events.setObservationActive(true);
+  captureWait = null; release(); await settle();
+  assert.equal(captures, 3, "Returning during an in-flight capture must refresh without waiting 15 seconds.");
+  assert.equal(sent.some(event => event.snapshot?.sequence === 2), false, "Pre-suspension captures must remain invalidated.");
 });
 
 test("macOS default lookup preserves legacy identity without enumerating unrelated themes", async t => {
@@ -57,25 +66,25 @@ test("macOS default lookup preserves legacy identity without enumerating unrelat
   assert.deepEqual((await adapter.defaultTheme()).ref, { source: "saved", id: legacy });
 });
 
-test("power observation coalesces idle, screen and resume transitions and closes its helper", async t => {
+test("power observation ignores input inactivity and coalesces screen transitions", async t => {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "dreamskin-power-observer-")));
   t.after(() => rm(root, { recursive: true, force: true }));
   const helper = path.join(root, "power-fixture");
   const samples = [
-    { screenAwake: true, idleSeconds: 0 }, { screenAwake: true, idleSeconds: 1 },
-    { screenAwake: true, idleSeconds: 60 }, { screenAwake: true, idleSeconds: 0 },
-    { screenAwake: false, idleSeconds: 0 },
+    { screenAwake: true }, { screenAwake: true, idleSeconds: 60 },
+    { screenAwake: true, idleSeconds: 3600 }, { screenAwake: false },
+    { screenAwake: false }, { screenAwake: true },
   ];
   await writeFile(helper, "#!/bin/sh\nprintf '%s\\n' '" + samples.map(value => JSON.stringify(value)).join("' '") + "'\nexec /bin/cat >/dev/null\n", { mode: 0o700 });
   const states = [];
   let complete;
   const done = new Promise(resolve => { complete = resolve; });
-  const close = observePowerState(helper, suspended => { states.push(suspended); if (states.length === 4) complete(); });
+  const close = observePowerState(helper, suspended => { states.push(suspended); if (states.length === 3) complete(); });
   t.after(close);
   let timer;
   try { await Promise.race([done, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Power samples did not arrive")), 2000); })]); }
   finally { clearTimeout(timer); close(); }
-  assert.deepEqual(states, [false, true, false, true]);
+  assert.deepEqual(states, [false, true, false]);
 });
 
 // Vite's locked esbuild dependency bundles pure UI helpers for Node; no DOM,
