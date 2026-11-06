@@ -284,10 +284,16 @@ export class ManagerService {
   }
   async executeNative(value: unknown): Promise<unknown> {
     if (this.closing) throw new ContractError("BACKEND_UNAVAILABLE", "This manager session is closing.");
-    if (!this.sources || !this.nativeFiles || !record(value) || value.protocol !== PROTOCOL || value.kind !== "native.request" ||
+    if (!record(value) || value.protocol !== PROTOCOL || value.kind !== "native.request" ||
         Object.keys(value).some(key => !["protocol", "kind", "requestId", "method", "params"].includes(key)) || !record(value.params)) {
       throw new ContractError("METHOD_UNSUPPORTED", "Native file handling is unavailable.");
     }
+    if (value.method === "session.observe") {
+      if (Object.keys(value.params).length !== 1 || typeof value.params.active !== "boolean") throw new ContractError("INVALID_REQUEST", "Invalid observation state.");
+      this.events.setObservationActive(value.params.active);
+      return { active: value.params.active };
+    }
+    if (!this.sources || !this.nativeFiles) throw new ContractError("METHOD_UNSUPPORTED", "Native file handling is unavailable.");
     if (value.method === "updates.authorizeOpen" || value.method === "updates.authorizeQuit") {
       if (!this.updates) throw new ContractError("METHOD_UNSUPPORTED", "Native update handling is unavailable.");
       const quit = value.method === "updates.authorizeQuit";

@@ -126,17 +126,11 @@ export class MacOSRuntimeObserver {
         browser = await response.text();
       } else if (owners.length) throw new Error("CDP listener does not belong to Codex.");
       const watcherVerified = await watcherMatches(state, port, initial);
-      const final = await processes(), finalOwners = await listeners(port);
-      if (mainProcesses(initial, executable) !== mainProcesses(final, executable) ||
-          JSON.stringify(owners) !== JSON.stringify(finalOwners) ||
-          owners.some(pid => initial.get(pid)?.startedAt !== final.get(pid)?.startedAt || !ownedListener(pid, final, executable)) ||
-          watcherVerified && (initial.get(Number(state.injectorPid))?.startedAt !== final.get(Number(state.injectorPid))?.startedAt ||
-            initial.get(Number(state.injectorPid))?.executable !== final.get(Number(state.injectorPid))?.executable)) {
-        throw new Error("Runtime changed during observation.");
-      }
+      // This is advisory UI status. A single process/port snapshot is enough;
+      // every write still obtains the native probe again under its own checks.
       const after = await optionalBytes(file, this.stateRoot);
       if (before === null ? after !== null : after === null || !Buffer.from(before).equals(after)) throw new Error("State changed during observation.");
-      return macosProbe(port, executable, mainProcesses(final, executable), browser, state.session === "paused", watcherVerified);
+      return macosProbe(port, executable, mainProcesses(initial, executable), browser, state.session === "paused", watcherVerified);
     } catch {
       throw new ContractError("RUNTIME_UNAVAILABLE", "The macOS runtime could not be observed.", true);
     }
